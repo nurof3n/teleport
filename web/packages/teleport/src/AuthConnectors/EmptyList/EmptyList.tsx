@@ -31,8 +31,9 @@ import {
 import getSsoIcon from 'teleport/AuthConnectors/ssoIcons/getSsoIcon';
 import { State as ResourceState } from 'teleport/components/useResources';
 import { CtaEvent } from 'teleport/services/userEvent';
+import { KeycloakIcon } from 'design/SVGIcon/Keycloak';
 
-export default function EmptyList({ onCreate }: Props) {
+export default function EmptyList({ onCreate, onCreateOidc }: Props) {
   return (
     <Card
       color="text.main"
@@ -45,11 +46,11 @@ export default function EmptyList({ onCreate }: Props) {
       </Text>
       <Flex flexWrap="wrap" justifyContent="center" mt={4} minWidth="224px">
         {renderGithubConnector(onCreate)}
+        {renderOidcConnector(onCreateOidc)}
         <LockedFeatureContainer>
-          {renderLockedItem('oidc')}
           {renderLockedItem('saml')}
           <LockedFeatureButton event={CtaEvent.CTA_AUTH_CONNECTOR}>
-            Unlock OIDC & SAML with Teleport Enterprise
+            Unlock SAML with Teleport Enterprise
           </LockedFeatureButton>
         </LockedFeatureContainer>
       </Flex>
@@ -72,6 +73,27 @@ function renderGithubConnector(onCreate) {
       {
         <Text mt={2} color="text.slightlyMuted" transform="none">
           Sign in using your GitHub account
+        </Text>
+      }
+    </ConnectorBox>
+  );
+}
+
+function renderOidcConnector(onCreate) {
+  return (
+    <ConnectorBox as="button" onClick={onCreate}>
+      <Flex width="100%">
+        <Flex height="72px" alignItems="center">
+          <KeycloakIcon style={{ textAlign: 'center' }} size={48} />
+        </Flex>
+      </Flex>
+
+      <Text typography="body2" mt={4} fontSize="18px" color="text.primary" bold>
+        OIDC
+      </Text>
+      {
+        <Text mt={2} color="text.slightlyMuted" transform="none">
+          Sign in using OIDC
         </Text>
       }
     </ConnectorBox>
@@ -106,4 +128,5 @@ function renderLockedItem(kind: AuthProviderType) {
 
 type Props = {
   onCreate: ResourceState['create'];
+  onCreateOidc: ResourceState['create'];
 };

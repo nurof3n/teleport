@@ -26,6 +26,7 @@ import { State as ResourceState } from 'teleport/components/useResources';
 import { ResponsiveConnector } from 'teleport/AuthConnectors/styles/ConnectorBox.styles';
 
 import { State as AuthConnectorState } from '../useAuthConnectors';
+import { KeycloakIcon } from 'design/SVGIcon/Keycloak';
 
 export default function ConnectorList({ items, onEdit, onDelete }: Props) {
   items = items || [];
@@ -34,6 +35,7 @@ export default function ConnectorList({ items, onEdit, onDelete }: Props) {
     return (
       <ConnectorListItem
         key={id}
+        kind={item.kind}
         id={id}
         onEdit={onEdit}
         onDelete={onDelete}
@@ -49,7 +51,7 @@ export default function ConnectorList({ items, onEdit, onDelete }: Props) {
   );
 }
 
-function ConnectorListItem({ name, id, onEdit, onDelete }) {
+function ConnectorListItem({ name, kind, id, onEdit, onDelete }) {
   const onClickEdit = () => onEdit(id);
   const onClickDelete = () => onDelete(id);
 
@@ -69,7 +71,12 @@ function ConnectorListItem({ name, id, onEdit, onDelete }) {
         style={{ textAlign: 'center' }}
       >
         <Box mb={3} mt={3}>
-          <GitHubIcon style={{ textAlign: 'center' }} size={50} />
+          {kind === 'github' && (
+            <GitHubIcon style={{ textAlign: 'center' }} size={50} />
+          )}
+          {kind === 'oidc' && (
+            <KeycloakIcon style={{ textAlign: 'center' }} size={50} />
+          )}
         </Box>
         <Text style={{ width: '100%' }} typography="body2" bold caps>
           {name}
@@ -91,7 +98,7 @@ const menuActionProps = {
 };
 
 type Props = {
-  items: AuthConnectorState['items'];
+  items: AuthConnectorState['items'] | AuthConnectorState['itemsOidc'];
   onEdit: ResourceState['edit'];
   onDelete: ResourceState['remove'];
 };

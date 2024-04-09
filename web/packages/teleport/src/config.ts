@@ -36,7 +36,7 @@ import type { Regions } from './services/integrations';
 import type { ParticipantMode } from 'teleport/services/session';
 
 const cfg = {
-  isEnterprise: false,
+  isEnterprise: true,
   isCloud: false,
   assistEnabled: false,
   automaticUpgrades: false,
@@ -220,6 +220,7 @@ const cfg = {
     rolesPath: '/v1/webapi/roles/:name?',
     presetRolesPath: '/v1/webapi/presetroles',
     githubConnectorsPath: '/v1/webapi/github/:name?',
+    oidcConnectorsPath: '/v1/webapi/oidc/:name?',
     trustedClustersPath: '/v1/webapi/trustedcluster/:name?',
     connectMyComputerLoginsPath: '/v1/webapi/connectmycomputer/logins',
 
@@ -760,6 +761,10 @@ const cfg = {
 
   getGithubConnectorsUrl(name?: string) {
     return generatePath(cfg.api.githubConnectorsPath, { name });
+  },
+
+  getOidcConnectorsUrl(name?: string) {
+    return generatePath(cfg.api.oidcConnectorsPath, { name });
   },
 
   getTrustedClustersUrl(name?: string) {

@@ -47,5 +47,8 @@
       "web/packages/*",
       "e/web/*"
     ]
+  },
+  "dependencies": {
+    "yarn": "^1.22.22"
   }
 }

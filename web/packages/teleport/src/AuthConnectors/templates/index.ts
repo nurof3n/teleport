@@ -17,8 +17,9 @@
  */
 
 import github from './github.yaml?raw';
+import oidc from './oidc.yaml?raw';
 
-const templates = { github };
+const templates = { github, oidc };
 
-export { github };
+export { github, oidc };
 export default templates;

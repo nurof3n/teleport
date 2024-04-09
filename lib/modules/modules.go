@@ -363,6 +363,8 @@ func (p *defaultModules) Features() Features {
 		Desktop:           true,
 		AutomaticUpgrades: p.automaticUpgrades,
 		Assist:            true,
+		OIDC: 			   true,
+		SAML: 			   true,
 	}
 }
 
