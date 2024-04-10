@@ -792,6 +792,12 @@ func (h *Handler) bindDefaultEndpoints() {
 	h.GET("/webapi/github/callback", h.WithMetaRedirect(h.githubCallback))
 	h.POST("/webapi/github/login/console", h.WithLimiter(h.githubLoginConsole))
 
+	//TODO(nurof3n): uncomment oidc connector handlers
+	//OIDC connector handlers
+	// h.GET("/webapi/oidc/login/web", h.WithRedirect(h.oidcLoginWeb))
+	// h.GET("/webapi/oidc/callback", h.WithMetaRedirect(h.oidcCallback))
+	// h.POST("/webapi/oidc/login/console", h.WithLimiter(h.oidcLoginConsole))
+
 	// MFA public endpoints.
 	h.POST("/webapi/sites/:site/mfa/required", h.WithClusterAuth(h.isMFARequired))
 	h.POST("/webapi/mfa/login/begin", h.WithLimiter(h.mfaLoginBegin))
@@ -820,6 +826,7 @@ func (h *Handler) bindDefaultEndpoints() {
 	h.DELETE("/webapi/roles/:name", h.WithAuth(h.deleteRole))
 	h.GET("/webapi/presetroles", h.WithUnauthenticatedHighLimiter(h.getPresetRoles))
 
+	//TODO(nurof3n): add OIDC connector CRUD
 	h.GET("/webapi/github", h.WithAuth(h.getGithubConnectorsHandle))
 	h.POST("/webapi/github", h.WithAuth(h.createGithubConnectorHandle))
 	h.PUT("/webapi/github/:name", h.WithAuth(h.updateGithubConnectorHandle))
@@ -1738,6 +1745,9 @@ func (h *Handler) motd(w http.ResponseWriter, r *http.Request, p httprouter.Para
 	return webclient.MotD{Text: authPrefs.GetMessageOfTheDay()}, nil
 }
 
+//TODO(nurof3n): write here the OIDC connector handlers
+
+// for UI auth
 func (h *Handler) githubLoginWeb(w http.ResponseWriter, r *http.Request, p httprouter.Params) string {
 	logger := h.log.WithField("auth", "github")
 	logger.Debug("Web login start.")
@@ -1770,6 +1780,7 @@ func (h *Handler) githubLoginWeb(w http.ResponseWriter, r *http.Request, p httpr
 	return response.RedirectURL
 }
 
+// for tsh
 func (h *Handler) githubLoginConsole(w http.ResponseWriter, r *http.Request, p httprouter.Params) (interface{}, error) {
 	logger := h.log.WithField("auth", "github")
 	logger.Debug("Console login start.")
