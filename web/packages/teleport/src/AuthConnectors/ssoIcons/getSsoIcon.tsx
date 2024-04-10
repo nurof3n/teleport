@@ -101,6 +101,12 @@ function formatConnectorTypeDesc(kind) {
   if (kind == 'github') {
     return `GitHub`;
   }
+  if (kind == 'saml') {
+    return `SAML`;
+  }
+  if (kind == 'oidc') {
+    return `OIDC`;
+  }
   return kind.toUpperCase();
 }
 

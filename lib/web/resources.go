@@ -41,6 +41,8 @@ import (
 	"github.com/gravitational/teleport/lib/web/ui"
 )
 
+//TODO(nurof3n): create OIDC crud
+
 // checkAccessToRegisteredResource checks if calling user has access to at least one registered resource.
 func (h *Handler) checkAccessToRegisteredResource(w http.ResponseWriter, r *http.Request, p httprouter.Params, c *SessionContext, site reversetunnelclient.RemoteSite) (interface{}, error) {
 	// Get a client to the Auth Server with the logged in user's identity. The

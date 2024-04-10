@@ -1,0 +1,19 @@
+kind: oidc
+metadata:
+  name: oidc_connector
+spec:
+  claims_to_roles:
+  - claim: groups
+    roles:
+    - access
+    value: users
+  - claim: groups
+    roles:
+    - editor
+    value: admins
+  client_id: <CLIENT-NAME>
+  client_secret: <CLIENT-SECRET>
+  issuer_url: https://idp.example.com/
+  redirect_url: https://mytenant.teleport.sh:443/v1/webapi/oidc/callback
+  max_age: 24h
+version: v3

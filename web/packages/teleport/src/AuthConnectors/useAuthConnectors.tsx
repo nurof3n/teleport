@@ -25,12 +25,18 @@ import useTeleport from 'teleport/useTeleport';
 export default function useAuthConnectors() {
   const ctx = useTeleport();
   const [items, setItems] = useState<Resource<'github'>[]>([]);
+  const [itemsOidc, setItemsOidc] = useState<Resource<'oidc'>[]>([]);
   const { attempt, run } = useAttempt('processing');
 
   function fetchData() {
-    return ctx.resourceService.fetchGithubConnectors().then(response => {
-      setItems(response);
-    });
+    return Promise.all([
+      ctx.resourceService.fetchGithubConnectors().then(response => {
+        setItems(response);
+      }),
+      ctx.resourceService.fetchOidcConnectors().then(response => {
+        setItemsOidc(response);
+      }),
+    ]);
   }
 
   function save(name: string, yaml: string, isNew: boolean) {
@@ -42,8 +48,19 @@ export default function useAuthConnectors() {
       .then(fetchData);
   }
 
+  function saveOidc(name: string, yaml: string, isNew: boolean) {
+    if (isNew) {
+      return ctx.resourceService.createOidcConnector(yaml).then(fetchData);
+    }
+    return ctx.resourceService.updateOidcConnector(name, yaml).then(fetchData);
+  }
+
   function remove(name: string) {
     return ctx.resourceService.deleteGithubConnector(name).then(fetchData);
+  }
+
+  function removeOidc(name: string) {
+    return ctx.resourceService.deleteOidcConnector(name).then(fetchData);
   }
 
   useEffect(() => {
@@ -52,9 +69,12 @@ export default function useAuthConnectors() {
 
   return {
     items,
+    itemsOidc,
     attempt,
     save,
+    saveOidc,
     remove,
+    removeOidc,
   };
 }
 

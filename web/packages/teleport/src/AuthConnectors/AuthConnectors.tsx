@@ -30,11 +30,13 @@ import {
   ResponsiveFeatureHeader,
 } from 'teleport/AuthConnectors/styles/AuthConnectors.styles';
 
+import { Kind, Resource } from 'teleport/services/resources';
+
+import templates from './templates';
 import EmptyList from './EmptyList';
 import ConnectorList from './ConnectorList';
 import DeleteConnectorDialog from './DeleteConnectorDialog';
 import useAuthConnectors, { State } from './useAuthConnectors';
-import templates from './templates';
 
 export function AuthConnectorsContainer() {
   const state = useAuthConnectors();
@@ -42,21 +44,39 @@ export function AuthConnectorsContainer() {
 }
 
 export function AuthConnectors(props: State) {
-  const { attempt, items, remove, save } = props;
-  const isEmpty = items.length === 0;
-  const resources = useResources(items, templates);
+  const { items, itemsOidc, attempt, save, saveOidc, remove, removeOidc } =
+    props;
+  const allItems: Resource<Kind>[] = [...items, ...itemsOidc];
+  const isEmpty = allItems.length === 0;
+  const resources = useResources(allItems, templates);
 
   const title =
     resources.status === 'creating'
-      ? 'Creating a new github connector'
-      : 'Editing github connector';
+      ? 'Creating a new connector'
+      : 'Editing connector';
   const description =
     'Auth connectors allow Teleport to authenticate users via an external identity source such as Okta, Active Directory, GitHub, etc. This authentication method is commonly known as single sign-on (SSO).';
 
   function handleOnSave(content: string) {
     const name = resources.item.name;
     const isNew = resources.status === 'creating';
-    return save(name, content, isNew);
+    switch (resources.item.kind) {
+      case 'github':
+        return save(name, content, isNew);
+      case 'oidc':
+        return saveOidc(name, content, isNew);
+    }
+    return Promise.reject('Unknown connector type');
+  }
+
+  function handleRemove(item: Resource<Kind>) {
+    switch (item.kind) {
+      case 'github':
+        return remove(item.name);
+      case 'oidc':
+        return removeOidc(item.name);
+    }
+    return Promise.reject('Unknown connector type');
   }
 
   return (
@@ -69,6 +89,9 @@ export function AuthConnectors(props: State) {
         <ResponsiveAddButton onClick={() => resources.create('github')}>
           New GitHub Connector
         </ResponsiveAddButton>
+        <ResponsiveAddButton onClick={() => resources.create('oidc')}>
+          New Oidc Connector
+        </ResponsiveAddButton>
       </ResponsiveFeatureHeader>
       {attempt.status === 'failed' && <Alert children={attempt.statusText} />}
       {attempt.status === 'processing' && (
@@ -80,7 +103,10 @@ export function AuthConnectors(props: State) {
         <Flex alignItems="start">
           {isEmpty && (
             <Flex width="100%" justifyContent="center">
-              <EmptyList onCreate={() => resources.create('github')} />
+              <EmptyList
+                onCreate={() => resources.create('github')}
+                onCreateOidc={() => resources.create('oidc')}
+              />
             </Flex>
           )}
           <>
@@ -101,12 +127,12 @@ export function AuthConnectors(props: State) {
                 <Link
                   color="text.main"
                   // This URL is the OSS documentation for auth connectors
-                  href="https://goteleport.com/docs/setup/admin/github-sso/"
+                  href="https://goteleport.com/docs/access-controls/sso/"
                   target="_blank"
                 >
                   view our documentation
                 </Link>{' '}
-                on how to configure a GitHub connector.
+                on how to configure a SSO connector.
               </Text>
             </DesktopDescription>
           </>
@@ -126,7 +152,7 @@ export function AuthConnectors(props: State) {
         <DeleteConnectorDialog
           name={resources.item.name}
           onClose={resources.disregard}
-          onDelete={() => remove(resources.item.name)}
+          onDelete={() => handleRemove(resources.item)}
         />
       )}
     </FeatureBox>

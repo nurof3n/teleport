@@ -71,7 +71,7 @@ class TeleportContext implements types.Context {
   // TODO(mcbattirola): use cluster features instead of only using `isTeam`
   // to determine which feature is locked
   lockedFeatures: types.LockedFeatures = {
-    authConnectors: cfg.isTeam,
+    authConnectors: true,
     activeSessions: cfg.isTeam,
     premiumSupport: cfg.isTeam,
     externalCloudAudit: cfg.isTeam,
@@ -226,7 +226,7 @@ export const disabledFeatureFlags: types.FeatureFlags = {
   activeSessions: false,
   applications: false,
   audit: false,
-  authConnector: false,
+  authConnector: true,
   billing: false,
   databases: false,
   desktops: false,
