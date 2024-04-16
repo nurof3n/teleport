@@ -21,12 +21,13 @@ import { Box, ButtonPrimary, Flex, Text } from 'design';
 import { MenuIcon, MenuItem } from 'shared/components/MenuAction';
 import { GitHubIcon } from 'design/SVGIcon';
 
+import { KeycloakIcon } from 'design/SVGIcon/Keycloak';
+
 import { State as ResourceState } from 'teleport/components/useResources';
 
 import { ResponsiveConnector } from 'teleport/AuthConnectors/styles/ConnectorBox.styles';
 
 import { State as AuthConnectorState } from '../useAuthConnectors';
-import { KeycloakIcon } from 'design/SVGIcon/Keycloak';
 
 export default function ConnectorList({ items, onEdit, onDelete }: Props) {
   items = items || [];

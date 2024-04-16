@@ -84,6 +84,20 @@ func NewRoles(roles []types.Role) ([]ResourceItem, error) {
 	return items, nil
 }
 
+func NewOIDCConnectors(connectors []types.OIDCConnector) ([]ResourceItem, error) {
+	items := make([]ResourceItem, 0, len(connectors))
+	for _, connector := range connectors {
+		item, err := NewResourceItem(connector)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+
+		items = append(items, *item)
+	}
+
+	return items, nil
+}
+
 // NewGithubConnectors creates resource item for each github connector.
 func NewGithubConnectors(connectors []types.GithubConnector) ([]ResourceItem, error) {
 	items := make([]ResourceItem, 0, len(connectors))

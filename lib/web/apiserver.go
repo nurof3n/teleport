@@ -855,6 +855,11 @@ func (h *Handler) bindDefaultEndpoints() {
 	h.GET("/webapi/presetroles", h.WithUnauthenticatedHighLimiter(h.getPresetRoles))
 
 	//TODO(nurof3n): add OIDC connector CRUD
+	h.GET("/webapi/oidc", h.WithAuth(h.getOIDCConnectorsHandle))
+	h.POST("/webapi/oidc", h.WithAuth(h.createOIDCConnectorHandle))
+	h.PUT("/webapi/oidc/:name", h.WithAuth(h.updateOIDCConnectorHandle))
+	h.DELETE("/webapi/oidc/:name", h.WithAuth(h.deleteOIDCConnector))
+
 	h.GET("/webapi/github", h.WithAuth(h.getGithubConnectorsHandle))
 	h.POST("/webapi/github", h.WithAuth(h.createGithubConnectorHandle))
 	h.PUT("/webapi/github/:name", h.WithAuth(h.updateGithubConnectorHandle))

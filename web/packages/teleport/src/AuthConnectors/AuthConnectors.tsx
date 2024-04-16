@@ -111,7 +111,7 @@ export function AuthConnectors(props: State) {
           )}
           <>
             <ConnectorList
-              items={items}
+              items={allItems as Resource<'github'>[] | Resource<'oidc'>[]}
               onEdit={resources.edit}
               onDelete={resources.remove}
             />

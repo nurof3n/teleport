@@ -141,6 +141,54 @@ func (h *Handler) getPresetRoles(w http.ResponseWriter, r *http.Request, p httpr
 	return ui.NewRoles(presets)
 }
 
+func (h *Handler) getOIDCConnectorsHandle(w http.ResponseWriter, r *http.Request, params httprouter.Params, ctx *SessionContext) (interface{}, error) {
+	clt, err := ctx.GetClient()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	connectors, err := clt.GetOIDCConnectors(r.Context(), true)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	return ui.NewOIDCConnectors(connectors)
+}
+
+func (h *Handler) deleteOIDCConnector(w http.ResponseWriter, r *http.Request, params httprouter.Params, ctx *SessionContext) (interface{}, error) {
+	clt, err := ctx.GetClient()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	connectorName := params.ByName("name")
+	if err := clt.DeleteOIDCConnector(r.Context(), connectorName); err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	return OK(), nil
+}
+
+func (h *Handler) updateOIDCConnectorHandle(w http.ResponseWriter, r *http.Request, params httprouter.Params, ctx *SessionContext) (interface{}, error) {
+	clt, err := ctx.GetClient()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	item, err := UpdateResource[types.OIDCConnector](r, params, types.KindOIDCConnector, services.UnmarshalOIDCConnector, clt.UpdateOIDCConnector)
+	return item, trace.Wrap(err)
+}
+
+func (h *Handler) createOIDCConnectorHandle(w http.ResponseWriter, r *http.Request, params httprouter.Params, ctx *SessionContext) (interface{}, error) {
+	clt, err := ctx.GetClient()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	item, err := CreateResource(r, types.KindOIDCConnector, services.UnmarshalOIDCConnector, clt.CreateOIDCConnector)
+	return item, trace.Wrap(err)
+}
+
 func (h *Handler) getGithubConnectorsHandle(w http.ResponseWriter, r *http.Request, params httprouter.Params, ctx *SessionContext) (interface{}, error) {
 	clt, err := ctx.GetClient()
 	if err != nil {
