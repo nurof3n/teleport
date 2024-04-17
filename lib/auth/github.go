@@ -130,6 +130,7 @@ func (g *GithubConverter) UpdateGithubConnector(ctx context.Context, connector t
 	return updated, trace.Wrap(err)
 }
 
+// TODO(nurof3n) study this file
 // CreateGithubAuthRequest creates a new request for Github OAuth2 flow
 func (a *Server) CreateGithubAuthRequest(ctx context.Context, req types.GithubAuthRequest) (*types.GithubAuthRequest, error) {
 	connector, client, err := a.getGithubConnectorAndClient(ctx, req)

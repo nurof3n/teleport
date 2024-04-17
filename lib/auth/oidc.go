@@ -31,7 +31,8 @@ import (
 	"github.com/gravitational/teleport/lib/events"
 )
 
-// TODO(nurof3n) find an implementation/implement this interface
+// TODO(nurof3n) we need a proper implementation of this interface, see the flow
+// in github.go and consult Keycloak OIDC documentation
 type OIDCService interface {
 	CreateOIDCAuthRequest(ctx context.Context, req types.OIDCAuthRequest) (*types.OIDCAuthRequest, error)
 	ValidateOIDCAuthCallback(ctx context.Context, q url.Values) (*OIDCAuthResponse, error)
@@ -126,7 +127,6 @@ func (a *Server) DeleteOIDCConnector(ctx context.Context, connectorName string) 
 }
 
 func (a *Server) CreateOIDCAuthRequest(ctx context.Context, req types.OIDCAuthRequest) (*types.OIDCAuthRequest, error) {
-	// TODO(nurof3n) needs to be injected in a.oidcAuthService
 	if a.oidcAuthService == nil {
 		return nil, errOIDCNotImplemented
 	}
@@ -136,7 +136,6 @@ func (a *Server) CreateOIDCAuthRequest(ctx context.Context, req types.OIDCAuthRe
 }
 
 func (a *Server) ValidateOIDCAuthCallback(ctx context.Context, q url.Values) (*OIDCAuthResponse, error) {
-	// TODO(nurof3n) needs to be injected in a.oidcAuthService
 	if a.oidcAuthService == nil {
 		return nil, errOIDCNotImplemented
 	}

@@ -37,6 +37,7 @@ import (
 	"math"
 	"math/big"
 	insecurerand "math/rand"
+	"net/url"
 	"os"
 	"slices"
 	"sort"
@@ -427,6 +428,16 @@ func NewServer(cfg *InitConfig, opts ...ServerOption) (*Server, error) {
 		embedder:                cfg.EmbeddingClient,
 		accessMonitoringEnabled: cfg.AccessMonitoringEnabled,
 	}
+
+	// create OIDCService implementation
+	oidcService, err := newOidcService()
+	if err != nil {
+		logger := logrus.WithField(trace.Component, "auth")
+		logger.WithError(trace.Wrap(err)).Error("Failed to create OIDC service.")
+	} else {
+		as.SetOIDCService(oidcService)
+	}
+
 	as.inventory = inventory.NewController(&as, services, inventory.WithAuthServerID(cfg.HostUUID))
 	for _, o := range opts {
 		if err := o(&as); err != nil {
@@ -518,6 +529,29 @@ func NewServer(cfg *InitConfig, opts ...ServerOption) (*Server, error) {
 	}
 
 	return &as, nil
+}
+
+// TODO(nurof3n) remove this code once the new OIDC service is fully implemented
+// this dows not work, see TODO in oidc.go
+type OIDCServiceImpl struct {
+	httpClient      *HTTPClient
+	identityService *local.IdentityService
+}
+
+func (o *OIDCServiceImpl) CreateOIDCAuthRequest(ctx context.Context, req types.OIDCAuthRequest) (*types.OIDCAuthRequest, error) {
+	return &req, o.identityService.CreateOIDCAuthRequest(ctx, req, 60)
+}
+
+func (o *OIDCServiceImpl) ValidateOIDCAuthCallback(ctx context.Context, q url.Values) (*OIDCAuthResponse, error) {
+	return o.httpClient.ValidateOIDCAuthCallback(ctx, q)
+}
+
+// newOidcService creates a new OIDC service implementation
+func newOidcService() (*OIDCServiceImpl, error) {
+	return &OIDCServiceImpl{
+		httpClient:      nil,
+		identityService: nil,
+	}, nil
 }
 
 type Services struct {
