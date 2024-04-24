@@ -248,6 +248,7 @@ func (o *OIDCServiceImpl) CreateOIDCAuthRequest(ctx context.Context, req types.O
 		return nil, trace.Wrap(err)
 	}
 	req.RedirectURL = client.AuthCodeURL(req.StateToken, "", "")
+	//TODO(nurof3n): see if there are any other fields in req that need to be set
 	log.WithFields(logrus.Fields{teleport.ComponentKey: "oidc"}).Debugf(
 		"Redirect URL: %v.", req.RedirectURL)
 	err = a.Services.CreateOIDCAuthRequest(ctx, req)
@@ -354,10 +355,56 @@ func (o *OIDCServiceImpl) ValidateOIDCAuthCallback(ctx context.Context, q url.Va
 }
 
 func validateOIDCAuthCallbackHelper(ctx context.Context, m oidcManager, diagCtx *SSODiagContext, q url.Values, emitter apievents.Emitter) (*OIDCAuthResponse, error) {
-	return nil, trace.NotImplemented("TODO")
+	event := &apievents.UserLogin{
+		Metadata: apievents.Metadata{
+			Type: events.UserLoginEvent,
+		},
+		Method:             events.LoginMethodOIDC,
+		ConnectionMetadata: authz.ConnectionMetadata(ctx),
+	}
+
+	auth, err := m.validateOIDCAuthCallback(ctx, diagCtx, q)
+	diagCtx.Info.Error = trace.UserMessage(err)
+	event.AppliedLoginRules = diagCtx.Info.AppliedLoginRules
+
+	diagCtx.WriteToBackend(ctx)
+
+	claims := diagCtx.Info.OIDCClaims
+	if claims != nil {
+		//TODO(nurof3n): check if any claims are of interest for event.IdentityAttributes
+	}
+
+	if err != nil {
+		event.Code = events.UserSSOLoginFailureCode
+		if diagCtx.Info.TestFlow {
+			event.Code = events.UserSSOTestFlowLoginFailureCode
+		}
+		event.Status.Success = false
+		event.Status.Error = trace.Unwrap(err).Error()
+		event.Status.UserMessage = err.Error()
+
+		if err := emitter.EmitAuditEvent(ctx, event); err != nil {
+			log.WithError(err).Warn("Failed to emit OIDC login failed event.")
+		}
+		return nil, trace.Wrap(err)
+	}
+
+	event.Code = events.UserSSOLoginCode
+	if diagCtx.Info.TestFlow {
+		event.Code = events.UserSSOTestFlowLoginCode
+	}
+	event.Status.Success = true
+	event.User = auth.Username
+
+	if err := emitter.EmitAuditEvent(ctx, event); err != nil {
+		log.WithError(err).Warn("Failed to emit OIDC login event.")
+	}
+
+	return auth, nil
 }
 
 func (a *Server) validateOIDCAuthCallback(ctx context.Context, diagCtx *SSODiagContext, q url.Values) (*OIDCAuthResponse, error) {
+	//TODO(nurof3n): doamne ajuta 
 	return nil, trace.NotImplemented("TODO")
 }
 
