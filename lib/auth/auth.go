@@ -37,7 +37,6 @@ import (
 	"math"
 	"math/big"
 	insecurerand "math/rand"
-	"net/url"
 	"os"
 	"slices"
 	"sort"
@@ -412,6 +411,7 @@ func NewServer(cfg *InitConfig, opts ...ServerOption) (*Server, error) {
 		AuthServiceName:         cfg.AuthServiceName,
 		ServerID:                cfg.HostUUID,
 		githubClients:           make(map[string]*githubClient),
+		oidcClients:             make(map[string]*oidcClient),
 		cancelFunc:              cancelFunc,
 		closeCtx:                closeCtx,
 		emitter:                 cfg.Emitter,
@@ -430,7 +430,7 @@ func NewServer(cfg *InitConfig, opts ...ServerOption) (*Server, error) {
 	}
 
 	// create OIDCService implementation
-	oidcService, err := newOidcService()
+	oidcService, err := newOidcService(&as)
 	if err != nil {
 		logger := logrus.WithField(trace.Component, "auth")
 		logger.WithError(trace.Wrap(err)).Error("Failed to create OIDC service.")
@@ -529,29 +529,6 @@ func NewServer(cfg *InitConfig, opts ...ServerOption) (*Server, error) {
 	}
 
 	return &as, nil
-}
-
-// TODO(nurof3n) remove this code once the new OIDC service is fully implemented
-// this dows not work, see TODO in oidc.go
-type OIDCServiceImpl struct {
-	httpClient      *HTTPClient
-	identityService *local.IdentityService
-}
-
-func (o *OIDCServiceImpl) CreateOIDCAuthRequest(ctx context.Context, req types.OIDCAuthRequest) (*types.OIDCAuthRequest, error) {
-	return &req, o.identityService.CreateOIDCAuthRequest(ctx, req, 60)
-}
-
-func (o *OIDCServiceImpl) ValidateOIDCAuthCallback(ctx context.Context, q url.Values) (*OIDCAuthResponse, error) {
-	return o.httpClient.ValidateOIDCAuthCallback(ctx, q)
-}
-
-// newOidcService creates a new OIDC service implementation
-func newOidcService() (*OIDCServiceImpl, error) {
-	return &OIDCServiceImpl{
-		httpClient:      nil,
-		identityService: nil,
-	}, nil
 }
 
 type Services struct {
@@ -791,6 +768,7 @@ type LoginHook func(context.Context, types.User) error
 type Server struct {
 	lock          sync.RWMutex
 	githubClients map[string]*githubClient
+	oidcClients   map[string]*oidcClient
 	clock         clockwork.Clock
 	bk            backend.Backend
 
@@ -6747,6 +6725,12 @@ func (k *authKeepAliver) Close() error {
 
 // githubClient is internal structure that stores Github OAuth 2client and its config
 type githubClient struct {
+	client *oauth2.Client
+	config oauth2.Config
+}
+
+// oidcClient is an internal structure that stores OIDC Oauth2 client and its config
+type oidcClient struct {
 	client *oauth2.Client
 	config oauth2.Config
 }

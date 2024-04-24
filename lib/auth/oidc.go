@@ -21,14 +21,24 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
 	"net/url"
 
+	"github.com/gravitational/teleport"
 	"github.com/gravitational/trace"
+	"github.com/sirupsen/logrus"
 
 	"github.com/gravitational/teleport/api/types"
 	apievents "github.com/gravitational/teleport/api/types/events"
 	"github.com/gravitational/teleport/lib/authz"
+	"github.com/gravitational/teleport/lib/defaults"
 	"github.com/gravitational/teleport/lib/events"
+	services "github.com/gravitational/teleport/lib/services"
+	"github.com/gravitational/teleport/lib/utils"
+
+	"github.com/coreos/go-oidc"
+	oauth2 "github.com/coreos/go-oidc/oauth2"
 )
 
 // TODO(nurof3n) we need a proper implementation of this interface, see the flow
@@ -207,3 +217,154 @@ type OIDCAuthRawResponse struct {
 	// trusted by proxy, used in console login
 	HostSigners []json.RawMessage `json:"host_signers"`
 }
+
+// OIDCServiceImpl implements OIDCService interface, i.e., it defines the
+// functions CreateOIDCAuthRequest and ValidateOIDCAuthCallback.
+type OIDCServiceImpl struct {
+	server *Server
+}
+
+// newOidcService creates a new OIDC service implementation
+func newOidcService(a *Server) (*OIDCServiceImpl, error) {
+	return &OIDCServiceImpl{
+		server: a,
+	}, nil
+}
+
+func (o *OIDCServiceImpl) CreateOIDCAuthRequest(ctx context.Context, req types.OIDCAuthRequest) (*types.OIDCAuthRequest, error) {
+	connector, client, err := o.server.getOidcConnectorAndClient(ctx, req)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	if hook := OIDCAuthRequestHook; hook != nil {
+		if err := hook(ctx, &req, connector); err != nil {
+			return nil, trace.Wrap(err)
+		}
+	}
+
+	req.StateToken, err = utils.CryptoRandomHex(defaults.TokenLenBytes)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	req.RedirectURL = client.AuthCodeURL(req.StateToken, "", "")
+	log.WithFields(logrus.Fields{teleport.ComponentKey: "oidc"}).Debugf(
+		"Redirect URL: %v.", req.RedirectURL)
+	err = a.Services.CreateOIDCAuthRequest(ctx, req)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return &req, nil
+}
+
+func (a *Server) getOidcConnectorAndClient(ctx context.Context, request types.OIDCAuthRequest) (types.OIDCConnector, *oauth2.Client, error) {
+	if request.SSOTestFlow {
+		if request.ConnectorSpec == nil {
+			return nil, nil, trace.BadParameter("ConnectorSpec cannot be nil when SSOTestFlow is true")
+		}
+
+		if request.ConnectorID == "" {
+			return nil, nil, trace.BadParameter("ConnectorID cannot be empty")
+		}
+
+		// stateless test flow
+		connector, err := services.NewOidcConnector(request.ConnectorID, *request.ConnectorSpec)
+		if err != nil {
+			return nil, nil, trace.Wrap(err)
+		}
+
+		// construct client directly
+		config := newOIDCOAuth2Config(connector)
+		client, err := oauth2.NewClient(http.DefaultClient, config)
+		if err != nil {
+			return nil, nil, trace.Wrap(err)
+		}
+
+		return connector, client, nil
+	}
+
+	// regular execution flow
+	connector, err := a.GetOIDCConnector(ctx, request.ConnectorID, true)
+	if err != nil {
+		return nil, nil, trace.Wrap(err)
+	}
+	connector, err = services.InitOIDCConnector(connector)
+	if err != nil {
+		return nil, nil, trace.Wrap(err)
+	}
+
+	client, err := a.getOIDCOAuth2Client(connector)
+	if err != nil {
+		return nil, nil, trace.Wrap(err)
+	}
+
+	return connector, client, nil
+}
+
+func newOIDCOAuth2Config(connector types.OIDCConnector) oauth2.Config {
+	return oauth2.Config{
+		Credentials: oauth2.ClientCredentials{
+			ID:     connector.GetClientID(),
+			Secret: connector.GetClientSecret(),
+		},
+		//TODO(nurof3n): see how we can manage multiple redirect URLs
+		RedirectURL: connector.GetRedirectURLs()[0],
+		Scope: []string{
+			oidc.ScopeOpenID,
+			// Keycloak specific I guess
+			"profile",
+			"email",
+		},
+		//TODO(nurof3n): remove hardcoding of endpoint
+		AuthURL:  fmt.Sprintf("%s/%s", connector.GetIssuerURL(), KeycloakAuthPath),
+		TokenURL: fmt.Sprintf("%s/%s", connector.GetIssuerURL(), KeycloakTokenPath),
+	}
+}
+
+func (a *Server) getOIDCOAuth2Client(connector types.OIDCConnector) (*oauth2.Client, error) {
+	config := newOIDCOAuth2Config(connector)
+
+	a.lock.Lock()
+	defer a.lock.Unlock()
+
+	cachedClient, ok := a.oidcClients[connector.GetName()]
+	if ok && oauth2ConfigsEqual(cachedClient.config, config) {
+		return cachedClient.client, nil
+	}
+
+	delete(a.oidcClients, connector.GetName())
+	client, err := oauth2.NewClient(http.DefaultClient, config)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	a.oidcClients[connector.GetName()] = &oidcClient{
+		client: client,
+		config: config,
+	}
+	return client, nil
+}
+
+type oidcManager interface {
+	validateOIDCAuthCallback(ctx context.Context, diagCtx *SSODiagContext, q url.Values) (*OIDCAuthResponse, error)
+}
+
+func (o *OIDCServiceImpl) ValidateOIDCAuthCallback(ctx context.Context, q url.Values) (*OIDCAuthResponse, error) {
+	diagCtx := NewSSODiagContext(types.KindOIDC, o.server)
+	return validateOIDCAuthCallbackHelper(ctx, o.server, diagCtx, q, o.server.emitter)
+}
+
+func validateOIDCAuthCallbackHelper(ctx context.Context, m oidcManager, diagCtx *SSODiagContext, q url.Values, emitter apievents.Emitter) (*OIDCAuthResponse, error) {
+	return nil, trace.NotImplemented("TODO")
+}
+
+func (a *Server) validateOIDCAuthCallback(ctx context.Context, diagCtx *SSODiagContext, q url.Values) (*OIDCAuthResponse, error) {
+	return nil, trace.NotImplemented("TODO")
+}
+
+const (
+	// KeycloakuthPath is the Keycloak OIDC authorization endpoint
+	KeycloakAuthPath = "protocol/openid-connect/auth"
+
+	// KeycloakTokenPath is the Keycloak token exchange endpoint
+	KeycloakTokenPath = "protocol/openid-connect/token"
+)

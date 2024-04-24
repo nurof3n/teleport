@@ -20,6 +20,7 @@ package services
 
 import (
 	"net/url"
+	"sync"
 
 	"github.com/coreos/go-oidc/jose"
 	"github.com/gravitational/trace"
@@ -27,6 +28,57 @@ import (
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/teleport/lib/utils"
 )
+
+// oidcConnectorMutex is a mutex for the OIDC auth connector
+// registration functions.
+var oidcConnectorMutex sync.RWMutex
+
+// OIDCAuthCreator creates a new OIDC connector.
+type OIDCAuthCreator func(string, types.OIDCConnectorSpecV3) (types.OIDCConnector, error)
+
+var oidcAuthCreator OIDCAuthCreator
+
+// RegisterOidcAuthCreator registers a function to create OIDC auth connectors.
+func RegisterOidcAuthCreator(creator OIDCAuthCreator) {
+	oidcConnectorMutex.Lock()
+	defer oidcConnectorMutex.Unlock()
+	oidcAuthCreator = creator
+}
+
+// NewOidcConnector creates a new OIDC auth connector.
+func NewOidcConnector(name string, spec types.OIDCConnectorSpecV3) (types.OIDCConnector, error) {
+	oidcConnectorMutex.RLock()
+	defer oidcConnectorMutex.RUnlock()
+	return oidcAuthCreator(name, spec)
+}
+
+// OIDCAuthInitializer initializes a OIDC auth connector.
+type OIDCAuthInitializer func(types.OIDCConnector) (types.OIDCConnector, error)
+
+var oidcAuthInitializer OIDCAuthInitializer
+
+// RegisterOIDCAuthInitializer registers a function to initialize OIDC auth connectors.
+func RegisterOIDCAuthInitializer(init OIDCAuthInitializer) {
+	oidcConnectorMutex.Lock()
+	defer oidcConnectorMutex.Unlock()
+	oidcAuthInitializer = init
+}
+
+// InitOIDCConnector initializes c and returns a [types.OIDCConnector]
+// ready for use. InitOIDCConnector must be used to initialize any
+// uninitialized [types.OIDCConnector]s before they can be used.
+func InitOIDCConnector(c types.OIDCConnector) (types.OIDCConnector, error) {
+	oidcConnectorMutex.RLock()
+	defer oidcConnectorMutex.RUnlock()
+	return oidcAuthInitializer(c)
+}
+
+func init() {
+	RegisterOidcAuthCreator(types.NewOIDCConnector)
+	RegisterOIDCAuthInitializer(func(c types.OIDCConnector) (types.OIDCConnector, error) {
+		return c, nil
+	})
+}
 
 // GetClaimNames returns a list of claim names from the claim values
 func GetClaimNames(claims jose.Claims) []string {
