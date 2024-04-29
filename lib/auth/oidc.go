@@ -44,7 +44,7 @@ import (
 // TODO(nurof3n) we need a proper implementation of this interface, see the flow
 // in github.go and consult Keycloak OIDC documentation
 type OIDCService interface {
-	CreateOIDCAuthRequest(ctx context.Context, req types.OIDCAuthRequest) (*types.OIDCAuthRequest, error)
+	CreateOIDCAuthRequest(a *Server, ctx context.Context, req types.OIDCAuthRequest) (*types.OIDCAuthRequest, error)
 	ValidateOIDCAuthCallback(ctx context.Context, q url.Values) (*OIDCAuthResponse, error)
 }
 
@@ -141,7 +141,7 @@ func (a *Server) CreateOIDCAuthRequest(ctx context.Context, req types.OIDCAuthRe
 		return nil, errOIDCNotImplemented
 	}
 
-	rq, err := a.oidcAuthService.CreateOIDCAuthRequest(ctx, req)
+	rq, err := a.oidcAuthService.CreateOIDCAuthRequest(a, ctx, req)
 	return rq, trace.Wrap(err)
 }
 
@@ -231,7 +231,7 @@ func newOidcService(a *Server) (*OIDCServiceImpl, error) {
 	}, nil
 }
 
-func (o *OIDCServiceImpl) CreateOIDCAuthRequest(ctx context.Context, req types.OIDCAuthRequest) (*types.OIDCAuthRequest, error) {
+func (o *OIDCServiceImpl) CreateOIDCAuthRequest(a *Server, ctx context.Context, req types.OIDCAuthRequest) (*types.OIDCAuthRequest, error) {
 	connector, client, err := o.server.getOidcConnectorAndClient(ctx, req)
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -251,7 +251,7 @@ func (o *OIDCServiceImpl) CreateOIDCAuthRequest(ctx context.Context, req types.O
 	//TODO(nurof3n): see if there are any other fields in req that need to be set
 	log.WithFields(logrus.Fields{teleport.ComponentKey: "oidc"}).Debugf(
 		"Redirect URL: %v.", req.RedirectURL)
-	err = a.Services.CreateOIDCAuthRequest(ctx, req)
+	err = a.Services.CreateOIDCAuthRequest(ctx, req, defaults.OIDCAuthRequestTTL)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -404,7 +404,68 @@ func validateOIDCAuthCallbackHelper(ctx context.Context, m oidcManager, diagCtx 
 }
 
 func (a *Server) validateOIDCAuthCallback(ctx context.Context, diagCtx *SSODiagContext, q url.Values) (*OIDCAuthResponse, error) {
-	//TODO(nurof3n): doamne ajuta 
+	logger := log.WithFields(logrus.Fields{teleport.ComponentKey: "github"})
+
+	if errParam := q.Get("error"); errParam != "" {
+		// try to find request so the error gets logged against it.
+		state := q.Get("state")
+		if state != "" {
+			diagCtx.RequestID = state
+			req, err := a.Services.GetOIDCAuthRequest(ctx, state)
+			if err == nil {
+				diagCtx.Info.TestFlow = req.SSOTestFlow
+			}
+		}
+
+		// optional parameter: error_description
+		errDesc := q.Get("error_description")
+		oauthErr := trace.OAuth2(oauth2.ErrorInvalidRequest, errParam, q)
+		return nil, trace.WithUserMessage(oauthErr, "OIDC returned error: %v [%v]", errDesc, errParam)
+	}
+
+	code := q.Get("code")
+	if code == "" {
+		oauthErr := trace.OAuth2(oauth2.ErrorInvalidRequest, "code query param must be set", q)
+		return nil, trace.WithUserMessage(oauthErr, "Invalid parameters received from GitHub.")
+	}
+
+	stateToken := q.Get("state")
+	if stateToken == "" {
+		oauthErr := trace.OAuth2(oauth2.ErrorInvalidRequest, "missing state query param", q)
+		return nil, trace.WithUserMessage(oauthErr, "Invalid parameters received from GitHub.")
+	}
+	diagCtx.RequestID = stateToken
+
+	req, err := a.Services.GetOIDCAuthRequest(ctx, stateToken)
+	if err != nil {
+		return nil, trace.Wrap(err, "Failed to get OIDC Auth Request.")
+	}
+	diagCtx.Info.TestFlow = req.SSOTestFlow
+
+	connector, client, err := a.getOidcConnectorAndClient(ctx, *req)
+	if err != nil {
+		return nil, trace.Wrap(err, "Failed to get OIDC connector and client.")
+	}
+
+	// exchange the authorization code received by the callback for an access token
+	token, err := client.RequestToken(oauth2.GrantTypeAuthCode, code)
+	if err != nil {
+		return nil, trace.Wrap(err, "Requesting OIDC OAuth2 token failed.")
+	}
+
+	logger.Debugf("Obtained OAuth2 token: Type=%v Expires=%v Scope=%v.",
+		token.TokenType, token.Expires, token.Scope)
+
+	// TODO(bogdan) OIDC
+	// 1: create a new OIDC client and get data from the provider
+	// maybe using the /userinfo endpoint
+
+	// 2: parse resp from Claims to CreateOIDCParams
+
+	// 3: create user with CreateOIDCParams
+
+	// 4. SSO Test Flow
+
 	return nil, trace.NotImplemented("TODO")
 }
 

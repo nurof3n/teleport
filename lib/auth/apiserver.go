@@ -179,6 +179,9 @@ func NewAPIServer(config *APIConfig) (http.Handler, error) {
 	// SSO validation handlers
 	srv.POST("/:version/github/requests/validate", srv.WithAuth(srv.validateGithubAuthCallback))
 
+	// TODO(bogdan): Implement validate for OIDC
+	srv.POST("/:version/oidc/requests/validate", srv.WithAuth(srv.validateOIDCAuthCallback))
+
 	// Audit logs AKA events
 	srv.GET("/:version/events", srv.WithAuth(srv.searchEvents))
 	srv.GET("/:version/events/session", srv.WithAuth(srv.searchSessionEvents))
@@ -665,6 +668,50 @@ func (s *APIServer) validateGithubAuthCallback(auth *ServerWithRoles, w http.Res
 		return nil, trace.Wrap(err)
 	}
 	raw := githubAuthRawResponse{
+		Username: response.Username,
+		Identity: response.Identity,
+		Cert:     response.Cert,
+		TLSCert:  response.TLSCert,
+		Req:      response.Req,
+	}
+	if response.Session != nil {
+		rawSession, err := services.MarshalWebSession(
+			response.Session, services.WithVersion(version), services.PreserveResourceID())
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		raw.Session = rawSession
+	}
+	raw.HostSigners = make([]json.RawMessage, len(response.HostSigners))
+	for i, ca := range response.HostSigners {
+		data, err := services.MarshalCertAuthority(
+			ca, services.WithVersion(version), services.PreserveResourceID())
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		raw.HostSigners[i] = data
+	}
+	return &raw, nil
+}
+
+// TODO(bogdan): Implement validate for OIDC
+/*
+validateGithubAuthRequest validates Github auth callback redirect
+
+	POST /:version/github/requests/validate
+
+	Success response: githubAuthRawResponse
+*/
+func (s *APIServer) validateOIDCAuthCallback(auth *ServerWithRoles, w http.ResponseWriter, r *http.Request, p httprouter.Params, version string) (interface{}, error) {
+	var req validateGithubAuthCallbackReq
+	if err := httplib.ReadJSON(r, &req); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	response, err := auth.ValidateOIDCAuthCallback(r.Context(), req.Query)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	raw := OIDCAuthRawResponse{
 		Username: response.Username,
 		Identity: response.Identity,
 		Cert:     response.Cert,
