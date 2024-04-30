@@ -24,11 +24,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 
 	"github.com/gravitational/teleport"
 	"github.com/gravitational/trace"
 	"github.com/sirupsen/logrus"
 
+	"github.com/gravitational/teleport/api/constants"
+	apidefaults "github.com/gravitational/teleport/api/defaults"
 	"github.com/gravitational/teleport/api/types"
 	apievents "github.com/gravitational/teleport/api/types/events"
 	"github.com/gravitational/teleport/lib/authz"
@@ -426,13 +429,13 @@ func (a *Server) validateOIDCAuthCallback(ctx context.Context, diagCtx *SSODiagC
 	code := q.Get("code")
 	if code == "" {
 		oauthErr := trace.OAuth2(oauth2.ErrorInvalidRequest, "code query param must be set", q)
-		return nil, trace.WithUserMessage(oauthErr, "Invalid parameters received from GitHub.")
+		return nil, trace.WithUserMessage(oauthErr, "Invalid parameters received.")
 	}
 
 	stateToken := q.Get("state")
 	if stateToken == "" {
 		oauthErr := trace.OAuth2(oauth2.ErrorInvalidRequest, "missing state query param", q)
-		return nil, trace.WithUserMessage(oauthErr, "Invalid parameters received from GitHub.")
+		return nil, trace.WithUserMessage(oauthErr, "Invalid parameters received.")
 	}
 	diagCtx.RequestID = stateToken
 
@@ -456,17 +459,117 @@ func (a *Server) validateOIDCAuthCallback(ctx context.Context, diagCtx *SSODiagC
 	logger.Debugf("Obtained OAuth2 token: Type=%v Expires=%v Scope=%v.",
 		token.TokenType, token.Expires, token.Scope)
 
+	fmt.Printf("Connector: %+v\n\n", connector)
+	fmt.Printf("Token: %+v\n\n", token)
+
 	// TODO(bogdan) OIDC
 	// 1: create a new OIDC client and get data from the provider
 	// maybe using the /userinfo endpoint
+	oidcCl := &oidcApiClient{
+		token:       token.AccessToken,
+		apiEndpoint: connector.GetIssuerURL(),
+	}
 
-	// 2: parse resp from Claims to CreateOIDCParams
+	user, err := oidcCl.getUserInfo()
+	if err != nil {
+		return nil, trace.Wrap(err, "Failed to get user info from OIDC provider.")
+	}
+	fmt.Printf("Received user: %+v\n\n", user)
 
-	// 3: create user with CreateOIDCParams
+	// 2: get roles from claims
+	var roles []string
 
-	// 4. SSO Test Flow
+	cr := connector.GetClaimsToRoles()
+	for _, claim := range cr {
+		fmt.Printf("Claim: %+v\n", claim)
+
+		// TODO(bogdan): turn this into a generic approach
+		if claim.Claim == "roles" {
+			// Check if claim value is found in user roles
+			if slices.Contains(user.Roles, claim.Value) {
+				roles = append(roles, claim.Roles...)
+			}
+		}
+
+		if claim.Claim == "groups" {
+			// Check if claim value is found in user groups
+			if slices.Contains(user.Groups, claim.Value) {
+				roles = append(roles, claim.Roles...)
+			}
+		}
+	}
+
+	fmt.Printf("Roles: %+v\n\n", roles)
+
+	// 3: create user with CreateOIDCParams (need to create something like calculateGithubUser from github.go:824
+	// before calling a.createOIDCUser)
+
+	// 4. SSO Test Flow - to be investigated if it's relevant in our case
 
 	return nil, trace.NotImplemented("TODO")
+}
+
+func (a *Server) createOIDCUser(ctx context.Context, p *CreateUserParams, dryRun bool) (types.User, error) {
+	log.WithFields(logrus.Fields{teleport.ComponentKey: "oidc"}).Debugf(
+		"Generating dynamic OIDC identity %v/%v with roles: %v. Dry run: %v.",
+		p.ConnectorName, p.Username, p.Roles, dryRun)
+
+	expires := a.GetClock().Now().UTC().Add(p.SessionTTL)
+
+	user := &types.UserV2{
+		Kind:    types.KindUser,
+		Version: types.V2,
+		Metadata: types.Metadata{
+			Name:      p.Username,
+			Namespace: apidefaults.Namespace,
+			Expires:   &expires,
+		},
+		Spec: types.UserSpecV2{
+			Roles:  p.Roles,
+			Traits: p.Traits,
+			GithubIdentities: []types.ExternalIdentity{{
+				ConnectorID: p.ConnectorName,
+				Username:    p.Username,
+			}},
+			CreatedBy: types.CreatedBy{
+				User: types.UserRef{Name: teleport.UserSystem},
+				Time: a.GetClock().Now().UTC(),
+				Connector: &types.ConnectorRef{
+					Type:     constants.OIDC,
+					ID:       p.ConnectorName,
+					Identity: p.Username,
+				},
+			},
+		},
+	}
+
+	if dryRun {
+		return user, nil
+	}
+
+	existingUser, err := a.Services.GetUser(ctx, p.Username, false)
+	if err != nil && !trace.IsNotFound(err) {
+		return nil, trace.Wrap(err)
+	}
+
+	if existingUser != nil {
+		ref := user.GetCreatedBy().Connector
+		if !ref.IsSameProvider(existingUser.GetCreatedBy().Connector) {
+			return nil, trace.AlreadyExists("local user %q already exists and is not a OIDC user",
+				existingUser.GetName())
+		}
+
+		user.SetRevision(existingUser.GetRevision())
+		if _, err := a.UpdateUser(ctx, user); err != nil {
+			return nil, trace.Wrap(err)
+		}
+	} else {
+		if _, err := a.CreateUser(ctx, user); err != nil {
+			return nil, trace.Wrap(err)
+		}
+	}
+
+	return user, nil
 }
 
 const (
@@ -476,3 +579,56 @@ const (
 	// KeycloakTokenPath is the Keycloak token exchange endpoint
 	KeycloakTokenPath = "protocol/openid-connect/token"
 )
+
+type oidcApiClient struct {
+	token       string
+	apiEndpoint string
+}
+
+type OIDCUserResponse struct {
+	Username string   `json:"preferred_username"`
+	Email    string   `json:"email,omitempty"`
+	Roles    []string `json:"roles,omitempty"`
+	Groups   []string `json:"groups,omitempty"`
+}
+
+func (c *oidcApiClient) get(path string) ([]byte, error) {
+	req, err := http.NewRequest("GET", c.apiEndpoint+"/"+path, nil)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/json")
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	defer res.Body.Close()
+
+	bytes, err := utils.ReadAtMost(res.Body, teleport.MaxHTTPResponseSize)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	if res.StatusCode != http.StatusOK {
+		return nil, trace.AccessDenied("OIDC API returned %v %v", res.Status, string(bytes))
+	}
+
+	return bytes, nil
+}
+
+func (c *oidcApiClient) getUserInfo() (*OIDCUserResponse, error) {
+	bytes, err := c.get("protocol/openid-connect/userinfo")
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	var user OIDCUserResponse
+	if err := json.Unmarshal(bytes, &user); err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	return &user, nil
+}
