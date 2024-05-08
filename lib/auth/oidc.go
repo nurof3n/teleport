@@ -34,6 +34,7 @@ import (
 	apidefaults "github.com/gravitational/teleport/api/defaults"
 	"github.com/gravitational/teleport/api/types"
 	apievents "github.com/gravitational/teleport/api/types/events"
+	"github.com/gravitational/teleport/api/utils/keys"
 	"github.com/gravitational/teleport/lib/authz"
 	"github.com/gravitational/teleport/lib/defaults"
 	"github.com/gravitational/teleport/lib/events"
@@ -406,6 +407,16 @@ func validateOIDCAuthCallbackHelper(ctx context.Context, m oidcManager, diagCtx 
 	return auth, nil
 }
 
+func OIDCAuthRequestFromProto(req *types.OIDCAuthRequest) OIDCAuthRequest {
+	return OIDCAuthRequest{
+		ConnectorID:       req.ConnectorID,
+		PublicKey:         req.PublicKey,
+		CSRFToken:         req.CSRFToken,
+		CreateWebSession:  req.CreateWebSession,
+		ClientRedirectURL: req.ClientRedirectURL,
+	}
+}
+
 func (a *Server) validateOIDCAuthCallback(ctx context.Context, diagCtx *SSODiagContext, q url.Values) (*OIDCAuthResponse, error) {
 	logger := log.WithFields(logrus.Fields{teleport.ComponentKey: "github"})
 
@@ -503,10 +514,107 @@ func (a *Server) validateOIDCAuthCallback(ctx context.Context, diagCtx *SSODiagC
 
 	// 3: create user with CreateOIDCParams (need to create something like calculateGithubUser from github.go:824
 	// before calling a.createOIDCUser)
+	params, err := a.calculateOIDCUser(user, roles, connector, req)
+	if err != nil {
+		return nil, trace.Wrap(err, "Failed to calculate OIDC user.")
+	}
+
+	createdUser, err := a.createOIDCUser(ctx, params, false)
+	if err != nil {
+		return nil, trace.Wrap(err, "Failed to create OIDC user in Teleport.")
+	}
+
+	fmt.Printf("Created user: %+v\n\n", createdUser)
 
 	// 4. SSO Test Flow - to be investigated if it's relevant in our case
+	if err := a.CallLoginHooks(ctx, createdUser); err != nil {
+		return nil, trace.Wrap(err)
+	}
 
-	return nil, trace.NotImplemented("TODO")
+	userState, err := a.GetUserOrLoginState(ctx, createdUser.GetName())
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	// Auth was successful, return session, certificate, etc. to caller.
+	auth := OIDCAuthResponse{
+		Req: OIDCAuthRequestFromProto(req),
+		Identity: types.ExternalIdentity{
+			ConnectorID: params.ConnectorName,
+			Username:    params.Username,
+		},
+		Username: createdUser.GetName(),
+	}
+	fmt.Printf("Created auth: %+v\n", auth)
+
+	// In test flow skip signing and creating web sessions.
+	if req.SSOTestFlow {
+		diagCtx.Info.Success = true
+		return &auth, nil
+	}
+
+	// If the request is coming from a browser, create a web session.
+	if req.CreateWebSession {
+		session, err := a.CreateWebSessionFromReq(ctx, NewWebSessionRequest{
+			User:             userState.GetName(),
+			Roles:            userState.GetRoles(),
+			Traits:           userState.GetTraits(),
+			SessionTTL:       params.SessionTTL,
+			LoginTime:        a.clock.Now().UTC(),
+			LoginIP:          req.ClientLoginIP,
+			AttestWebSession: true,
+		})
+		if err != nil {
+			return nil, trace.Wrap(err, "Failed to create web session.")
+		}
+
+		fmt.Printf("Created web session: %+v\n\n", session)
+
+		auth.Session = session
+	}
+
+	// If a public key was provided, sign it and return a certificate.
+	if len(req.PublicKey) != 0 {
+		sshCert, tlsCert, err := a.CreateSessionCert(userState, params.SessionTTL, req.PublicKey, req.Compatibility, req.RouteToCluster,
+			req.KubernetesCluster, req.ClientLoginIP, keys.AttestationStatementFromProto(req.AttestationStatement))
+		if err != nil {
+			return nil, trace.Wrap(err, "Failed to create session certificate.")
+		}
+
+		clusterName, err := a.GetClusterName()
+		if err != nil {
+			return nil, trace.Wrap(err, "Failed to obtain cluster name.")
+		}
+
+		auth.Cert = sshCert
+		auth.TLSCert = tlsCert
+
+		// Return the host CA for this cluster only.
+		authority, err := a.GetCertAuthority(ctx, types.CertAuthID{
+			Type:       types.HostCA,
+			DomainName: clusterName.GetClusterName(),
+		}, false)
+		if err != nil {
+			return nil, trace.Wrap(err, "Failed to obtain cluster's host CA.")
+		}
+		auth.HostSigners = append(auth.HostSigners, authority)
+	}
+
+	fmt.Printf("Returning auth %+v\n", auth)
+	return &auth, nil
+}
+
+func (a *Server) calculateOIDCUser(user *OIDCUserResponse, roles []string, connector types.OIDCConnector, req *types.OIDCAuthRequest) (*CreateUserParams, error) {
+	p := CreateUserParams{
+		ConnectorName: connector.GetName(),
+		Username:      user.Username,
+		Roles:         roles,
+		SessionTTL:    req.CertTTL,
+	}
+
+	// TODO(bogdan) proper 'calculation' of SessionTTL and Traits
+
+	return &p, nil
 }
 
 func (a *Server) createOIDCUser(ctx context.Context, p *CreateUserParams, dryRun bool) (types.User, error) {

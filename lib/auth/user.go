@@ -26,6 +26,7 @@ package auth
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/gravitational/trace"
 
@@ -48,10 +49,12 @@ func (a *Server) CreateUser(ctx context.Context, user types.User) (types.User, e
 		})
 	}
 
+	fmt.Printf("Creating user: %v\n", user)
 	created, err := a.Services.CreateUser(ctx, user)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
+	fmt.Printf("Created user: %v\n", created)
 
 	var connectorName string
 	if created.GetCreatedBy().Connector == nil {
