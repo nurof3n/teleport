@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -40,6 +41,7 @@ import (
 )
 
 func init() {
+	fmt.Printf("Registering Postgres backend\n")
 	backend.MustRegister(Name, func(ctx context.Context, p backend.Params) (backend.Backend, error) {
 		return NewFromParams(ctx, p)
 	})

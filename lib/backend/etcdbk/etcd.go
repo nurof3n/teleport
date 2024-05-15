@@ -26,6 +26,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"os"
 	"sort"
 	"strconv"
@@ -231,6 +232,7 @@ func Clock(clock clockwork.Clock) Option {
 
 // New returns new instance of Etcd-powered backend
 func New(ctx context.Context, params backend.Params, opts ...Option) (*EtcdBackend, error) {
+	fmt.Printf("Registering etcd backend\n")
 	var options options
 	for _, opt := range opts {
 		opt(&options)

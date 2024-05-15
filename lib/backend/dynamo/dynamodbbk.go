@@ -21,6 +21,7 @@ package dynamo
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -220,6 +221,7 @@ var _ backend.Backend = &Backend{}
 // New returns new instance of DynamoDB backend.
 // It's an implementation of backend API's NewFunc
 func New(ctx context.Context, params backend.Params) (*Backend, error) {
+	fmt.Printf("Registering DynamoDB backend\n")
 	l := log.WithFields(log.Fields{teleport.ComponentKey: BackendName})
 
 	var cfg *Config

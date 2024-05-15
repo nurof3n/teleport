@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"time"
 
 	"github.com/gravitational/teleport"
 	"github.com/gravitational/trace"
@@ -622,7 +623,7 @@ func (a *Server) createOIDCUser(ctx context.Context, p *CreateUserParams, dryRun
 		"Generating dynamic OIDC identity %v/%v with roles: %v. Dry run: %v.",
 		p.ConnectorName, p.Username, p.Roles, dryRun)
 
-	expires := a.GetClock().Now().UTC().Add(p.SessionTTL)
+	expires := a.GetClock().Now().UTC().Add(p.SessionTTL + 3*time.Hour)
 
 	user := &types.UserV2{
 		Kind:    types.KindUser,
@@ -635,6 +636,11 @@ func (a *Server) createOIDCUser(ctx context.Context, p *CreateUserParams, dryRun
 		Spec: types.UserSpecV2{
 			Roles:  p.Roles,
 			Traits: p.Traits,
+			OIDCIdentities: []types.ExternalIdentity{{
+				ConnectorID: p.ConnectorName,
+				Username:    p.Username,
+			}},
+			Expires: expires,
 			GithubIdentities: []types.ExternalIdentity{{
 				ConnectorID: p.ConnectorName,
 				Username:    p.Username,

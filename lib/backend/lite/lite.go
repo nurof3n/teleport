@@ -193,6 +193,7 @@ func (cfg *Config) ConnectionURI() string {
 
 // New returns a new instance of sqlite backend
 func New(ctx context.Context, params backend.Params) (*Backend, error) {
+	fmt.Printf("Registering SQLite backend")
 	var cfg *Config
 	err := utils.ObjectToStruct(params, &cfg)
 	if err != nil {
@@ -384,6 +385,8 @@ func (l *Backend) Clock() clockwork.Clock {
 
 // Create creates item if it does not exist
 func (l *Backend) Create(ctx context.Context, i backend.Item) (*backend.Lease, error) {
+	fmt.Printf("[SQLite Backend] Creating item Key: %s Value: %s", string(i.Key), string(i.Value))
+
 	if len(i.Key) == 0 {
 		return nil, trace.BadParameter("missing parameter key")
 	}
@@ -399,6 +402,7 @@ func (l *Backend) Create(ctx context.Context, i backend.Item) (*backend.Lease, e
 			defer stmt.Close()
 
 			if _, err := stmt.ExecContext(ctx, types.OpPut, created, string(i.Key), id(created), expires(i.Expires), i.Value, i.Revision); err != nil {
+				fmt.Printf("[SQLite Backend] Failed executing event statement %+v", err)
 				return trace.Wrap(err)
 			}
 		}
@@ -416,15 +420,19 @@ func (l *Backend) Create(ctx context.Context, i backend.Item) (*backend.Lease, e
 			}
 		}
 
+		fmt.Printf("[SQLite Backend] Inserting item Key: %s Value: %s", string(i.Key), string(i.Value))
 		if _, err := tx.ExecContext(ctx, "INSERT INTO kv(key, modified, expires, value, revision) values(?, ?, ?, ?, ?)", string(i.Key), id(created), expires(i.Expires), i.Value, i.Revision); err != nil {
+			fmt.Printf("[SQLite Backend] Failed inserting item %+v", err)
 			return trace.Wrap(err)
 		}
 		return nil
 	})
 	if err != nil {
+		fmt.Printf("[SQLite Backend] Error creating item within inTransaction %+v", err)
 		return nil, trace.Wrap(err)
 	}
 
+	fmt.Printf("[SQLite Backend] Created item Key: %s Value: %s", string(i.Key), string(i.Value))
 	return backend.NewLease(i), nil
 }
 

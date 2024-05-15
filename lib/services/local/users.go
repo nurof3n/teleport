@@ -25,6 +25,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"sort"
 	"sync"
@@ -294,7 +295,9 @@ func (s *IdentityService) getUsersWithSecrets(ctx context.Context) ([]types.User
 
 // CreateUser creates user if it does not exist.
 func (s *IdentityService) CreateUser(ctx context.Context, user types.User) (types.User, error) {
+	fmt.Printf("[services/local/users.go] Creating user: %v\n", user)
 	if err := services.ValidateUser(user); err != nil {
+		fmt.Printf("[services/local/users.go] User validation failed: %v\n", err)
 		return nil, trace.Wrap(err)
 	}
 
@@ -317,11 +320,14 @@ func (s *IdentityService) CreateUser(ctx context.Context, user types.User) (type
 		Value:   value,
 		Expires: user.Expiry(),
 	}
+	fmt.Printf("[services/local/users.go] Creating backend item: %v\n", user)
 
 	lease, err := s.Create(ctx, item)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
+
+	fmt.Printf("[services/local/users.go] Created user and received lease: %v\n", lease)
 
 	if auth := user.GetLocalAuth(); auth != nil {
 		if err = s.upsertLocalAuthSecrets(ctx, user.GetName(), *auth); err != nil {
